@@ -31,9 +31,12 @@ def make_confusion_matrix(model, x_test, y_test, class_labels,threshold=0.5):
     plt.ylabel('actual')
     return fig
 
-def plot_roc(model, x_test, y_test):
+def plot_roc(model, x_test, y_test,model_type, threshold=0.5):
     fig=plt.figure()
-    fpr, tpr, thresholds = metrics.roc_curve(y_test, model.predict(x_test))
+    if model_type=='tree':
+        fpr, tpr, thresholds =metrics.roc_curve(y_test, model.predict_proba(x_test)[:, 1] >= threshold)
+    else:
+        fpr, tpr, thresholds = metrics.roc_curve(y_test, model.predict(x_test))
     plt.plot(fpr, tpr,lw=2)
     plt.plot([0,1],[0,1],c='violet',ls='--')
     plt.xlim([0.05,1.05])
@@ -46,6 +49,7 @@ def plot_roc(model, x_test, y_test):
 
 
 def generate_coef_table(feature_names, model, model_type, top_x_features):
+    #fig=plt.figure()
     coef_table = pd.DataFrame(list(feature_names), columns=['Variable']).copy()
     if model_type == 'regression':
         feature_scores = model.coef_.transpose()

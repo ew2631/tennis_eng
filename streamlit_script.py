@@ -1,36 +1,17 @@
-"""
-Streamlit Housing App Demo
 
-Make sure to install Streamlit with `pip install streamlit`.
 
-Run `streamlit hello` to get started!
-
-To run this app:
-
-1. cd into this directory
-2. Run `streamlit run streamlit_script.py`
-"""
-
-import matplotlib.pyplot as plt
-import pandas as pd
 import streamlit as st
-import numpy as np
-from datetime import datetime, timedelta
 from model_results import *
 import pickle
 from PIL import Image
 from sqlalchemy import create_engine
 import sqlite3
 import seaborn as sns
-# We begin with Parts 3, 6, and 7, but uncomment the code in each of the other parts and save to see how the Streamlit application updates in your browser.
 
-#TODO: Create the one hot encoded to be able to do predictions: https://stackoverflow.com/questions/54786266/prediction-after-one-hot-encoding
-#TODO: In order to do that, also need to pull elo_winner/elo_loser
-# 1. User inputs name
-# 2. Search through original dataset and find all matches between two players
-# 3. Select match with most recent date--> get that elo_winner/elo_loser
-# 4. If they havent played set to 1500 for both
 
+from sklearn.model_selection import train_test_split
+
+@st.cache(persist=True)
 def get_model_ready(df, cat_vars, numeric_vars):
     target_var=df['Upset']
     cat_features=pd.get_dummies(df[cat_vars], drop_first=True)
@@ -42,6 +23,9 @@ def get_model_ready(df, cat_vars, numeric_vars):
 engine = create_engine(r'sqlite:///C:\Users\emwang\Downloads\tennis.db')
 df = pd.read_sql('SELECT * FROM updated_data;', engine)
 df['Year']=df['Year'].apply(lambda x: int(x))
+cat_vars= ["Series","Court", "Surface","Round","Tournament","Comment",'Bestof']
+numeric_vars=['Year','elo_winner','elo_loser']
+X_train, X_test, y_train, y_test=get_model_ready(df, cat_vars,numeric_vars)
 
 ## PART 2 - Markdown Syntax
 #
@@ -72,15 +56,15 @@ df['Year']=df['Year'].apply(lambda x: int(x))
 ################### Introduction ################
 
 
-img = Image.open("Tennis_Racket_and_Balls.jpg")
-st.image(img,width=600)
+img = Image.open("tennis.jpg")
+st.image(img,width=800)
 
 st.write(
     '''
     ### ATP Tennis Matches
     My goal is to build a match prediction tool for ATP matches.\
     I’ll be using the dataset of all ATP matches from 2000 to 2022 \
-    with roughly 30,000 matches 
+    with roughly 57,000 matches 
     ''')
 
 ################### Introduction ################
@@ -89,7 +73,9 @@ st.write(
     Here is a  table showing the raw data used to build the model
     ''')
 
-st.dataframe(df.head(10))
+all_features=cat_vars + numeric_vars
+st.dataframe(df[all_features].head(10))
+
 st.write(
     '''
     Some of the variables are tournament related, such as the tournament \
@@ -101,9 +87,11 @@ st.write(
     of the lower Elo rating player winning becomes is 24.1%
     ''')
 
+################### Table ################
+
 st.write(
     '''
-    ## ATP Tennis Matches
+    ### Most "Upsetting" Tournaments
     Input a year and you can find out the top 10 tournaments with the most upsets that year
     ''')
 
@@ -113,15 +101,15 @@ t.rename(columns={"count": "Num of Upsets"}, inplace=True)
 tourn_upsets=pd.DataFrame(t[t['Upset']==1]).sort_values(by='Num of Upsets',ascending=False)
 tourn_upsets=tourn_upsets.loc[:, tourn_upsets.columns != 'Upset']
 tourn_upsets=tourn_upsets[tourn_upsets['Year']==year][:10]
-st.dataframe(tourn_upsets, width=800, height=400)
-#plt.bar(x=tourn_upsets['Num of Upsets'], height=400, tick_label=tourn_upsets['Tournament'].values)
-#plt.show()
+st.dataframe(tourn_upsets)
+
 
 ################### Line Graph ################
 
 st.write(
 '''
-#### Upsets occur when a lower ranked player beats a higher ranked player. Here's a graph showing \
+### Trend of Match Upsets
+Upsets occur when a lower ranked player beats a higher ranked player. Here's a graph showing \
 how upsets have trended since 2000 
 '''
 )
@@ -146,58 +134,85 @@ to 37-38%
 '''
 )
 
+################### Models ################
+
 st.write(
     '''
-    ## Train and Compare Models
-    Now let's create a model to predict whether an upset will occur
+    ### Train and Compare Models
+    We trained and compared performance of 3 different models \
+     on predicting whether an upset will occur
     '''
 )
 
-from sklearn.model_selection import train_test_split
-
-cat_vars= ["Series","Court", "Surface","Round","Tournament","Comment",'Bestof']
-numeric_vars=['Year','elo_winner','elo_loser']
-X_train, X_test, y_train, y_test=get_model_ready(df, cat_vars,numeric_vars)
-scores=final_comparison(models, X_test, y_test)
-#models={'Decision_Tree': clf,'Random_Forest': rf,'XGBoost': xgb}
 dectree = pickle.load(open('Decision_Tree.pkl','rb'))
 rf=pickle.load(open('Random_Forest.pkl','rb'))
-xgb=pickle.load(open('Random_Forest.pkl','rb'))
+xgb=pickle.load(open('XGBoost.pkl','rb'))
+models={'Decision_Tree': dectree,'Random_Forest': rf,'XGBoost': xgb}
+scores=final_comparison(models, X_test, y_test)
+st.dataframe(scores)
 
-predictions=rf.predict(X_test)
+st.write('''XGBoost clearly performed the best with both the highest precision \
+        and ROC. Since this is a somewhat imbalanced dataset, it's important \
+        that both metrics are considered
+''')
+
+################### Performance Analysis ################
 
 st.write(
     '''
     ### Confusion Matrix
-    ##### The confusion matrix shows the performance of the model, both \
-    what the model got right (true positive=2631, true negatives=6455) and \
-    what the model got wrong (false positives=933, false negatives=1484)
+    The confusion matrix shows the performance of the model, both \
+    what the model got right (true positive=2954, true negatives=6606) and \
+    what the model got wrong (false positives=782, false negatives=1161)
     '''
 )
 matrix_fig = plt.figure(figsize=(10, 4))
-#matrix_fig, matrix_ax = plt.subplots()
-st.pyplot(make_confusion_matrix(rf, X_test, y_test,class_labels=['not upset','upset']))
+st.pyplot(make_confusion_matrix(xgb, X_test, y_test,class_labels=['not upset','upset']))
 
-#st.pyplot(make_confusion_matrix(dectree, X_test, y_test,class_labels=['not upset','upset']))
-roc_auc=metrics.roc_auc_score(y_test, rf.predict_proba(X_test)[:,1])
 
 st.write(
     '''
     ### ROC Curve
-    ##### The ROC Curve combines the different performance metrics to show \
+    The ROC Curve combines the different performance metrics to show \
     the tradeoff between TP Rate and FP Rate. Generally, a model's performance\
-    is compared to a 45 degree line (the dotted pink line), which is complete guessing \
-    
+    is compared to a 45 degree line (the dotted pink line), which is complete guessing.\
+    If you want to see how the AUC of the model changes with different probability \
+    thresholds, click the box!
     '''
 )
-st.write('ROC Curve Score:{a}'.format(a=roc_auc))
-roc_curve=plot_roc(dectree, X_test, y_test)
+
+show_slider = st.checkbox('I want to adjust the probability threshold', value=True)
+
+if show_slider:
+    threshold = st.slider('Probability Threshold', min_value=0.0, max_value=1.0, value=0.5, step=0.1 )
+else:
+    threshold=0.5
+
+roc_auc=metrics.roc_auc_score(y_test, xgb.predict_proba(X_test)[:,1]>= threshold)
+st.write('ROC Curve Score: {a}'.format(a=round(roc_auc, 2) ))
+roc_curve=plot_roc(xgb, X_test, y_test,model_type='tree', threshold=threshold)
 st.pyplot(roc_curve)
-roc_curve.show()
 
 
+st.write(
+    '''
+    ### Model Feature Importance
+    Since XGBoost is the best model, we can look \
+    at the most important features that contributed to the overall \
+    model performance
+    '''
+)
 
-# st.write(
-#     '''
-#     '''
-# )
+coef_table, fig=generate_coef_table(list(X_train.columns), xgb, 'tree', 10)
+st.pyplot(fig)
+
+st.write('''We find that the Elo rating variable and whether a a specific tournament \
+            was played were the best determinants for an upset
+        ''')
+
+#Create the one hot encoded to be able to do predictions: https://stackoverflow.com/questions/54786266/prediction-after-one-hot-encoding
+#In order to do that, also need to pull elo_winner/elo_loser
+# 1. User inputs name
+# 2. Search through original dataset and find all matches between two players
+# 3. Select match with most recent date--> get that elo_winner/elo_loser
+# 4. If they havent played set to 1500 for both
